@@ -12,6 +12,7 @@ config MT76x2_COMMON
 config MT76x0U
 	tristate "MediaTek MT76x0U (USB) support"
 	select MT76_CORE
+	depends on KALLSYMS
 	depends on MAC80211
 	depends on USB
 	help
@@ -21,6 +22,7 @@ config MT76x2E
 	tristate "MediaTek MT76x2E (PCIe) support"
 	select MT76_CORE
 	select MT76x2_COMMON
+	depends on KALLSYMS
 	depends on MAC80211
 	depends on PCI
 	---help---
@@ -31,6 +33,7 @@ config MT76x2U
 	select MT76_CORE
 	select MT76_USB
 	select MT76x2_COMMON
+	depends on KALLSYMS
 	depends on MAC80211
 	depends on USB
 	help

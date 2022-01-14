@@ -5,6 +5,7 @@ Test env:
 - device: 0e8d:7610 (MT7610U)
 
 Probably available for v4.4.x - v4.16.x
+The mt76x0 and mt76x2 series are also theoretically supported.
 
 I'm a noob in linux driver, and the availability of this driver is not guaranteed.
 
@@ -46,4 +47,4 @@ It only applies to some devices and is still an issue even on newer kernel versi
 
 ### Known Issue
 
-- Tx AMSPDU not supported. It is limited by the old mac80211 stack and may affect throughput.
+- Tx AMSDU not supported. It is limited by the old mac80211 stack and may affect throughput.

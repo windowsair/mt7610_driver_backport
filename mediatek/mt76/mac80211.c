@@ -14,10 +14,12 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include <linux/of.h>
+#include <linux/ieee80211.h>
+#include <linux/kallsyms.h>
+
 #include "mt76.h"
 #include "../../../../../net/mac80211/sta_info.h"
-#include "../../../../../net/mac80211/ieee80211_i.h"
-#include <linux/ieee80211.h>
+
 
 #define CHAN2G(_idx, _freq) {			\
 	.band = NL80211_BAND_2GHZ,		\
@@ -33,7 +35,6 @@
 	.max_power = 30,			\
 }
 
-void ieee80211_sta_uapsd_trigger(struct ieee80211_sta *sta, u8 tid);
 
 static const struct ieee80211_channel mt76_channels_2ghz[] = {
 	CHAN2G(1, 2412),
@@ -96,6 +97,22 @@ static const struct ieee80211_tpt_blink mt76_tpt_blink[] = {
 };
 
 
+static const int ieee802_1d_to_ac[8] = {
+	IEEE80211_AC_BE,
+	IEEE80211_AC_BK,
+	IEEE80211_AC_BK,
+	IEEE80211_AC_BE,
+	IEEE80211_AC_VI,
+	IEEE80211_AC_VI,
+	IEEE80211_AC_VO,
+	IEEE80211_AC_VO
+};
+
+static inline int ieee80211_ac_from_tid(int tid)
+{
+	return ieee802_1d_to_ac[tid & 7];
+}
+
 #define NUM_NL80211_BANDS 3
 
 
@@ -126,6 +143,42 @@ static const u8 ieee80211_ac_to_qos_mask[4] = {
 	IEEE80211_WMM_IE_STA_QOSINFO_AC_BE,
 	IEEE80211_WMM_IE_STA_QOSINFO_AC_BK
 };
+
+
+static void (*fn_ieee80211_sta_ps_deliver_uapsd)(struct sta_info *sta);
+
+static void ieee80211_sta_uapsd_trigger(struct ieee80211_sta *pubsta, u8 tid)
+{
+	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
+	int ac = ieee80211_ac_from_tid(tid);
+
+	/*
+	 * If this AC is not trigger-enabled do nothing unless the
+	 * driver is calling us after it already checked.
+	 *
+	 * NB: This could/should check a separate bitmap of trigger-
+	 * enabled queues, but for now we only implement uAPSD w/o
+	 * TSPEC changes to the ACs, so they're always the same.
+	 */
+	if (!(sta->sta.uapsd_queues & ieee80211_ac_to_qos_mask[ac]) &&
+	    tid != IEEE80211_NUM_TIDS)
+		return;
+
+	/* if we are in a service period, do nothing */
+	if (test_sta_flag(sta, WLAN_STA_SP))
+		return;
+
+	if (!test_sta_flag(sta, WLAN_STA_PS_DRIVER)) {
+		if (fn_ieee80211_sta_ps_deliver_uapsd == NULL) {
+			 fn_ieee80211_sta_ps_deliver_uapsd = (void (*)(struct sta_info *sta))kallsyms_lookup_name("ieee80211_sta_ps_deliver_uapsd");
+		}
+		if (fn_ieee80211_sta_ps_deliver_uapsd) {
+			fn_ieee80211_sta_ps_deliver_uapsd(sta);
+		}
+	}
+	else
+		set_sta_flag(sta, WLAN_STA_UAPSD);
+}
 
 
 static inline bool ieee80211_is_frag(struct ieee80211_hdr *hdr)
@@ -269,11 +322,27 @@ out_kfree:
 		dev_err(dev, "Failed to get limits: %d\n", err);
 }
 
+static void (*fn_ieee80211_sta_ps_deliver_poll_response)(struct sta_info *sta);
 
-void ieee80211_sta_pspoll(struct ieee80211_sta *pubsta);
+static void ieee80211_sta_pspoll(struct ieee80211_sta *pubsta)
+{
+	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
 
+	if (test_sta_flag(sta, WLAN_STA_SP))
+		return;
 
+	if (!test_sta_flag(sta, WLAN_STA_PS_DRIVER)) {
+		if (fn_ieee80211_sta_ps_deliver_poll_response == NULL) {
+			fn_ieee80211_sta_ps_deliver_poll_response = (void (*)(struct sta_info *sta))kallsyms_lookup_name("ieee80211_sta_ps_deliver_poll_response");
+		}
+		if (fn_ieee80211_sta_ps_deliver_poll_response) {
+			fn_ieee80211_sta_ps_deliver_poll_response(sta);
+		}
 
+	}
+	else
+		set_sta_flag(sta, WLAN_STA_PSPOLL);
+}
 
 
 static int mt76_led_init(struct mt76_dev *dev)
